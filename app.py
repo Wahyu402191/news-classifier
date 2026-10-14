@@ -125,9 +125,13 @@ def render_sidebar():
             st.success("Models Loaded Successfully")
             
             # Tampilkan spesifikasi model
+            st.markdown("**Skip-Gram Model:**")
             st.metric("Vector Dimension", f"{info['vector_size']}D")  # Dimensi vektor word embedding
             st.metric("Vocabulary Size", f"{info['vocab_size']:,} words")  # Jumlah kata dalam vocabulary
             st.metric("Context Window", info['window'])  # Window size Skip-Gram
+            
+            st.markdown("**SVM Classifier:**")
+            st.caption("Linear kernel with probability estimation")
             
         except Exception as e:
             st.error(f"Model Loading Error: {str(e)}")
@@ -281,7 +285,7 @@ def process_url_classification(url: str):
     status_text.text("Step 3/4: Classifying content...")
     progress_bar.progress(75)
     
-    with st.spinner("Running classification model..."):
+    with st.spinner("Running Skip-Gram embedding + SVM classification..."):
         prediction_result = predict_category(tokens)  # Prediksi kategori
         time.sleep(0.3)
     
@@ -323,7 +327,7 @@ def process_text_classification(text: str):
     status_text.text("Step 2/2: Classifying content...")
     progress_bar.progress(75)
     
-    with st.spinner("Running classification..."):
+    with st.spinner("Running Skip-Gram embedding + SVM classification..."):
         prediction_result = predict_category(tokens)  # Prediksi kategori
         time.sleep(0.3)
     
@@ -375,7 +379,7 @@ def display_classification_results(prediction, metadata, raw_text, processed_tex
         st.metric(
             "Vocabulary Coverage",
             f"{coverage_pct:.1f}%",
-            help="Percentage of tokens found in model vocabulary"
+            help="Percentage of tokens found in Skip-Gram vocabulary"
         )
     
     # Visualisasi distribusi probabilitas (bar chart)
@@ -383,6 +387,25 @@ def display_classification_results(prediction, metadata, raw_text, processed_tex
     if prediction['probabilities']:
         fig_prob = plot_probability_distribution(prediction['probabilities'])
         st.plotly_chart(fig_prob, use_container_width=True)
+    
+    # Expander penjelasan Skip-Gram
+    with st.expander("How does Skip-Gram classification work?"):
+        st.markdown("""
+        **Classification Pipeline:**
+        
+        1. **Preprocessing**: Clean text, remove stopwords, stemming
+        2. **Tokenization**: Split into individual words
+        3. **Skip-Gram Embedding**: Each word → 150D vector
+           - Example: "sepakbola" → [0.23, -0.45, 0.67, ..., 0.12]
+        4. **Mean Pooling**: Average all word vectors → document vector (150D)
+        5. **SVM Classification**: Classify document vector → Sport or Finance
+        6. **Confidence Score**: SVM decision function probability
+        
+        **Why Skip-Gram?**
+        - Captures semantic meaning (similar words have similar vectors)
+        - Better than TF-IDF for understanding context
+        - Compact representation (150D vs thousands of dimensions)
+        """)
     
     st.divider()
     
@@ -443,7 +466,12 @@ def display_classification_results(prediction, metadata, raw_text, processed_tex
     
     with tab4:
         # Analisis token (matched vs out-of-vocabulary)
-        st.markdown("#### Token Statistics")
+        st.markdown("#### Token Statistics (Skip-Gram Vocabulary)")
+        
+        st.caption("""
+        Tokens are converted to 150D vectors using Skip-Gram Word2Vec model. 
+        Matched tokens have vector representation, OOV tokens are ignored.
+        """)
         
         col1, col2, col3 = st.columns(3)
         col1.metric("Total Tokens", prediction['total_tokens'])
@@ -481,6 +509,14 @@ def main():
     This application uses **Skip-Gram Word2Vec** for word embedding and 
     **Support Vector Machine (SVM)** for classification of news articles 
     into **Sport** or **Finance** categories.
+    """)
+    
+    # Info box tentang metode
+    st.info("""
+    **Machine Learning Pipeline:**
+    1. Skip-Gram Word2Vec (150D vectors) - Word embedding
+    2. Mean Pooling - Document vector representation  
+    3. SVM Classifier (Linear kernel) - Binary classification
     """)
     
     st.divider()
