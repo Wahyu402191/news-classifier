@@ -7,7 +7,7 @@ import streamlit as st
 import time
 from pathlib import Path
 
-# Import utilities
+# Import utilities - modul untuk scraping, preprocessing, model, dan visualisasi
 from utils.scraper import scrape_article, validate_url
 from utils.preprocessor import preprocess_text, tokenize_text, get_text_statistics
 from utils.model_handler import load_models, predict_category, get_model_info
@@ -19,7 +19,7 @@ from utils.visualizer import (
 from config import UI_CONFIG, COLOR_SCHEME
 
 
-# Page configuration
+# Konfigurasi halaman Streamlit (title, icon, layout)
 st.set_page_config(
     page_title=UI_CONFIG['page_title'],
     page_icon=UI_CONFIG['page_icon'],
@@ -28,9 +28,9 @@ st.set_page_config(
 )
 
 
-# Custom CSS for professional styling (minimal, clean)
+# CSS kustom untuk styling profesional (warna biru, putih, abu-abu)
 def load_custom_css():
-    """Load custom CSS for professional styling"""
+    """Load custom CSS untuk styling aplikasi"""
     st.markdown("""
     <style>
     /* Main container */
@@ -101,31 +101,33 @@ def load_custom_css():
     """, unsafe_allow_html=True)
 
 
-@st.cache_resource
+@st.cache_resource  # Cache agar model tidak di-load berulang kali
 def initialize_models():
-    """Initialize and cache models"""
+    """Inisialisasi model Skip-Gram dan SVM (hanya load sekali)"""
     with st.spinner('Loading ML models...'):
-        models = load_models()
-        info = get_model_info()
+        models = load_models()  # Load Skip-Gram dan SVM
+        info = get_model_info()  # Ambil info model (dimensi, vocab, dll)
     return models, info
 
 
 def render_sidebar():
-    """Render sidebar with model information and settings"""
+    """Tampilkan sidebar dengan informasi model dan dataset"""
     with st.sidebar:
         st.title("System Information")
         
-        # Model info
+        # Informasi model yang sedang digunakan
         st.subheader("Model Status")
         try:
+            # Load model Skip-Gram dan SVM
             skipgram, svm = initialize_models()[0]
             info = get_model_info()
             
             st.success("Models Loaded Successfully")
             
-            st.metric("Vector Dimension", f"{info['vector_size']}D")
-            st.metric("Vocabulary Size", f"{info['vocab_size']:,} words")
-            st.metric("Context Window", info['window'])
+            # Tampilkan spesifikasi model
+            st.metric("Vector Dimension", f"{info['vector_size']}D")  # Dimensi vektor word embedding
+            st.metric("Vocabulary Size", f"{info['vocab_size']:,} words")  # Jumlah kata dalam vocabulary
+            st.metric("Context Window", info['window'])  # Window size Skip-Gram
             
         except Exception as e:
             st.error(f"Model Loading Error: {str(e)}")
@@ -133,7 +135,7 @@ def render_sidebar():
         
         st.divider()
         
-        # Dataset info
+        # Informasi dataset training
         st.subheader("Training Dataset")
         st.info("""
         **Total**: 180 articles  
@@ -142,7 +144,7 @@ def render_sidebar():
         **Split**: 80% train, 20% test
         """)
         
-        # Visualization
+        # Visualisasi distribusi dataset (pie chart)
         fig_dataset = plot_dataset_distribution(90, 90)
         st.plotly_chart(fig_dataset, use_container_width=True)
         
@@ -160,25 +162,27 @@ def render_sidebar():
 
 
 def render_url_input_tab():
-    """Render URL input interface"""
+    """Tampilkan tab input URL untuk scraping artikel"""
     st.subheader("Extract from URL")
     st.caption("Paste a news article URL to automatically extract and classify content")
     
-    # Initialize session state for URL
+    # Session state untuk menyimpan URL (agar tidak hilang saat refresh)
     if 'loaded_url' not in st.session_state:
         st.session_state['loaded_url'] = ""
     
-    # Quick examples
+    # Tombol contoh URL (Sport dan Finance)
     col1, col2 = st.columns(2)
     with col1:
+        # Tombol load contoh artikel Sport
         if st.button("Load Sport Example", use_container_width=True, type="secondary"):
             st.session_state['loaded_url'] = "https://sport.detik.com/sepakbola/liga-indonesia/d-7128945/timnas-indonesia-u-23-vs-guinea-skor-akhir-3-0"
     
     with col2:
+        # Tombol load contoh artikel Finance
         if st.button("Load Finance Example", use_container_width=True, type="secondary"):
             st.session_state['loaded_url'] = "https://finance.detik.com/moneter/d-7128567/rupiah-menguat-ke-rp-15200-per-dolar-as-hari-ini"
     
-    # URL input (use session state value)
+    # Input URL dari user
     url = st.text_input(
         "Article URL",
         value=st.session_state['loaded_url'],
@@ -189,26 +193,28 @@ def render_url_input_tab():
     
     st.divider()
     
-    # Classify button
+    # Tombol untuk mulai klasifikasi
     if st.button("Classify Article", type="primary", use_container_width=True):
+        # Validasi URL tidak kosong
         if not url:
             st.warning("Please enter a URL first")
             return
         
+        # Validasi format URL
         if not validate_url(url):
             st.error("Invalid URL format. URL must start with http:// or https://")
             return
         
-        # Process URL
+        # Proses klasifikasi dari URL
         process_url_classification(url)
 
 
 def render_text_input_tab():
-    """Render direct text input interface"""
+    """Tampilkan tab input teks langsung (tanpa scraping)"""
     st.subheader("Direct Text Input")
     st.caption("Paste or type article content directly for classification")
     
-    # Text area
+    # Area input teks
     text_input = st.text_area(
         "Article Content",
         height=250,
@@ -216,37 +222,39 @@ def render_text_input_tab():
         help="Enter the full article content for classification"
     )
     
-    # Character count
+    # Hitung jumlah karakter
     if text_input:
         st.caption(f"Character count: {len(text_input)}")
     
     st.divider()
     
-    # Classify button
+    # Tombol untuk mulai klasifikasi
     if st.button("Classify Text", type="primary", use_container_width=True):
+        # Validasi minimal 50 karakter
         if not text_input or len(text_input) < 50:
             st.warning("Please enter at least 50 characters of text")
             return
         
-        # Process text
+        # Proses klasifikasi dari teks langsung
         process_text_classification(text_input)
 
 
 def process_url_classification(url: str):
-    """Process URL classification workflow"""
+    """Proses klasifikasi dari URL (scraping -> preprocessing -> prediksi)"""
     
-    # Progress tracking
+    # Progress bar untuk tracking proses
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    # Step 1: Scraping
+    # Step 1: Scraping artikel dari URL
     status_text.text("Step 1/4: Extracting article content...")
     progress_bar.progress(25)
     
     with st.spinner("Scraping article..."):
-        result = scrape_article(url)
-        time.sleep(0.5)  # Brief pause for UX
+        result = scrape_article(url)  # Ekstrak konten artikel
+        time.sleep(0.5)  # Pause singkat untuk UX
     
+    # Cek jika scraping gagal
     if result.get('error'):
         st.error(f"Scraping failed: {result['error']}")
         progress_bar.empty()
@@ -255,24 +263,24 @@ def process_url_classification(url: str):
     
     content = result['content']
     
-    # Step 2: Preprocessing
+    # Step 2: Preprocessing (noise removal, stopwords, stemming)
     status_text.text("Step 2/4: Preprocessing text...")
     progress_bar.progress(50)
     
     with st.spinner("Cleaning and preprocessing..."):
-        processed_text = preprocess_text(content)
-        tokens = tokenize_text(processed_text)
+        processed_text = preprocess_text(content)  # Bersihkan teks
+        tokens = tokenize_text(processed_text)  # Tokenisasi ke list kata
         time.sleep(0.3)
     
-    # Step 3: Classification
+    # Step 3: Klasifikasi dengan Skip-Gram + SVM
     status_text.text("Step 3/4: Classifying content...")
     progress_bar.progress(75)
     
     with st.spinner("Running classification model..."):
-        prediction_result = predict_category(tokens)
+        prediction_result = predict_category(tokens)  # Prediksi kategori
         time.sleep(0.3)
     
-    # Step 4: Complete
+    # Step 4: Selesai
     status_text.text("Step 4/4: Complete!")
     progress_bar.progress(100)
     time.sleep(0.5)
@@ -280,7 +288,7 @@ def process_url_classification(url: str):
     progress_bar.empty()
     status_text.empty()
     
-    # Display results
+    # Tampilkan hasil klasifikasi
     display_classification_results(
         prediction_result,
         result,
@@ -291,27 +299,27 @@ def process_url_classification(url: str):
 
 
 def process_text_classification(text: str):
-    """Process direct text classification workflow"""
+    """Proses klasifikasi dari teks langsung (preprocessing -> prediksi)"""
     
-    # Progress tracking
+    # Progress bar untuk tracking proses
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    # Step 1: Preprocessing
+    # Step 1: Preprocessing (noise removal, stopwords, stemming)
     status_text.text("Step 1/2: Preprocessing text...")
     progress_bar.progress(50)
     
     with st.spinner("Processing..."):
-        processed_text = preprocess_text(text)
-        tokens = tokenize_text(processed_text)
+        processed_text = preprocess_text(text)  # Bersihkan teks
+        tokens = tokenize_text(processed_text)  # Tokenisasi
         time.sleep(0.3)
     
-    # Step 2: Classification
+    # Step 2: Klasifikasi dengan Skip-Gram + SVM
     status_text.text("Step 2/2: Classifying content...")
     progress_bar.progress(75)
     
     with st.spinner("Running classification..."):
-        prediction_result = predict_category(tokens)
+        prediction_result = predict_category(tokens)  # Prediksi kategori
         time.sleep(0.3)
     
     progress_bar.progress(100)
@@ -320,7 +328,7 @@ def process_text_classification(text: str):
     progress_bar.empty()
     status_text.empty()
     
-    # Display results
+    # Tampilkan hasil klasifikasi
     display_classification_results(
         prediction_result,
         {'title': 'Direct Input', 'author': 'User', 'date': 'Now', 'url': None},
@@ -331,16 +339,17 @@ def process_text_classification(text: str):
 
 
 def display_classification_results(prediction, metadata, raw_text, processed_text, tokens):
-    """Display classification results in a structured layout"""
+    """Tampilkan hasil klasifikasi dalam layout terstruktur"""
     
     st.success("Classification Complete")
     
-    # Main prediction result
+    # Hasil prediksi utama
     st.markdown("### Classification Result")
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
+        # Kategori hasil prediksi (Sport/Finance)
         st.metric(
             "Category",
             prediction['prediction'],
@@ -348,6 +357,7 @@ def display_classification_results(prediction, metadata, raw_text, processed_tex
         )
     
     with col2:
+        # Confidence score (persentase keyakinan model)
         st.metric(
             "Confidence",
             f"{prediction['confidence']:.1f}%",
@@ -355,6 +365,7 @@ def display_classification_results(prediction, metadata, raw_text, processed_tex
         )
     
     with col3:
+        # Vocabulary coverage (berapa % kata yang dikenali model)
         coverage_pct = prediction['vocab_coverage']
         st.metric(
             "Vocabulary Coverage",
@@ -362,7 +373,7 @@ def display_classification_results(prediction, metadata, raw_text, processed_tex
             help="Percentage of tokens found in model vocabulary"
         )
     
-    # Probability visualization
+    # Visualisasi distribusi probabilitas (bar chart)
     st.markdown("### Probability Distribution")
     if prediction['probabilities']:
         fig_prob = plot_probability_distribution(prediction['probabilities'])
@@ -370,7 +381,7 @@ def display_classification_results(prediction, metadata, raw_text, processed_tex
     
     st.divider()
     
-    # Detailed information tabs
+    # Tab detail informasi (metadata, konten, preprocessing, token)
     tab1, tab2, tab3, tab4 = st.tabs([
         "Article Metadata",
         "Content Preview",
@@ -379,6 +390,7 @@ def display_classification_results(prediction, metadata, raw_text, processed_tex
     ])
     
     with tab1:
+        # Metadata artikel (title, author, tanggal, URL)
         st.markdown("#### Article Information")
         st.write(f"**Title**: {metadata.get('title', 'N/A')}")
         st.write(f"**Author**: {metadata.get('author', 'N/A')}")
@@ -386,7 +398,7 @@ def display_classification_results(prediction, metadata, raw_text, processed_tex
         if metadata.get('url'):
             st.write(f"**URL**: [{metadata['url']}]({metadata['url']})")
         
-        # Text statistics
+        # Statistik konten artikel
         stats = get_text_statistics(raw_text)
         st.markdown("#### Content Statistics")
         col1, col2, col3, col4 = st.columns(4)
@@ -396,6 +408,7 @@ def display_classification_results(prediction, metadata, raw_text, processed_tex
         col4.metric("Avg Word Length", f"{stats['avg_word_length']:.1f}")
     
     with tab2:
+        # Preview konten asli (1000 karakter pertama)
         st.markdown("#### Original Content")
         st.caption("First 1000 characters of extracted content")
         st.text_area(
@@ -406,6 +419,7 @@ def display_classification_results(prediction, metadata, raw_text, processed_tex
         )
     
     with tab3:
+        # Hasil preprocessing (setelah noise removal, stopwords, stemming)
         st.markdown("#### Preprocessed Text")
         st.caption("After noise removal, stopword removal, and stemming (Sastrawi)")
         
@@ -423,14 +437,15 @@ def display_classification_results(prediction, metadata, raw_text, processed_tex
         )
     
     with tab4:
+        # Analisis token (matched vs out-of-vocabulary)
         st.markdown("#### Token Statistics")
         
         col1, col2, col3 = st.columns(3)
         col1.metric("Total Tokens", prediction['total_tokens'])
-        col2.metric("Matched", prediction['matched_tokens'])
-        col3.metric("Out of Vocabulary", prediction['oov_tokens'])
+        col2.metric("Matched", prediction['matched_tokens'])  # Kata yang ada di vocabulary
+        col3.metric("Out of Vocabulary", prediction['oov_tokens'])  # Kata yang tidak dikenali
         
-        # Token coverage visualization
+        # Visualisasi coverage token (pie chart)
         if prediction['matched_tokens'] > 0:
             fig_tokens = plot_token_statistics(
                 prediction['matched_tokens'],
@@ -438,22 +453,22 @@ def display_classification_results(prediction, metadata, raw_text, processed_tex
             )
             st.plotly_chart(fig_tokens, use_container_width=True)
         
-        # Sample tokens
+        # Sample 50 token pertama
         with st.expander("View Sample Tokens (first 50)"):
             sample_tokens = tokens[:50]
             st.write(", ".join(sample_tokens))
 
 
 def main():
-    """Main application entry point"""
+    """Fungsi utama aplikasi - entry point"""
     
-    # Load custom CSS
+    # Load CSS kustom
     load_custom_css()
     
-    # Render sidebar
+    # Tampilkan sidebar (model info, dataset info)
     render_sidebar()
     
-    # Main content
+    # Konten utama
     st.title("Detik News Classifier")
     st.caption("Automated classification of news articles using Machine Learning")
     
@@ -465,15 +480,16 @@ def main():
     
     st.divider()
     
-    # Input mode tabs
+    # Tab input (URL atau Text langsung)
     tab1, tab2 = st.tabs(["URL Input", "Text Input"])
     
     with tab1:
-        render_url_input_tab()
+        render_url_input_tab()  # Tab scraping dari URL
     
     with tab2:
-        render_text_input_tab()
+        render_text_input_tab()  # Tab input teks langsung
 
 
+# Entry point aplikasi
 if __name__ == "__main__":
     main()

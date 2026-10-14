@@ -1,5 +1,6 @@
 """
-Web scraping utilities for extracting news articles
+Modul untuk scraping artikel berita dari web
+Menggunakan trafilatura library untuk ekstraksi konten
 """
 
 import re
@@ -10,7 +11,8 @@ from config import SCRAPER_CONFIG
 
 def clean_html_content(raw_text: str) -> str:
     """
-    Clean extracted text content by removing noise and unnecessary elements
+    Bersihkan teks hasil ekstraksi dari noise dan elemen yang tidak perlu
+    Hapus: tanggal pendek, dateline kota, URL, line kosong
     
     Args:
         raw_text: Raw extracted text from HTML
@@ -24,12 +26,13 @@ def clean_html_content(raw_text: str) -> str:
     lines = raw_text.split("\n")
     cleaned_paragraphs = []
     
-    # Patterns untuk deteksi noise
+    # Regex pattern untuk deteksi noise (tanggal, waktu, dateline)
     date_pattern = re.compile(
         r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|\b\d{2}:\d{2}\s*(WIB|WITA|WIT)\b",
         re.IGNORECASE
     )
     
+    # Pattern dateline kota (contoh: JAKARTA - ...)
     dateline_pattern = re.compile(
         r"^[A-Z\s,./()\-]+--?\s*|^[A-Z\s,./()\-]+\s*-\s*"
     )
@@ -60,13 +63,13 @@ def clean_html_content(raw_text: str) -> str:
         
         cleaned_paragraphs.append(text)
     
-    # Gabungkan paragraf
+    # Gabungkan semua paragraf yang sudah dibersihkan
     full_text = "\n\n".join(cleaned_paragraphs)
     
-    # Remove URLs
+    # Hapus semua URL dari teks
     full_text = re.sub(r"https?://\S+|www\.\S+", "", full_text)
     
-    # Remove multiple spaces
+    # Hapus multiple spasi (ganti dengan 1 spasi)
     full_text = re.sub(r"\s+", " ", full_text).strip()
     
     return full_text
@@ -74,7 +77,8 @@ def clean_html_content(raw_text: str) -> str:
 
 def scrape_article(url: str) -> Dict[str, Optional[str]]:
     """
-    Extract news article content and metadata from URL
+    Ekstrak konten artikel dan metadata dari URL
+    Return: dictionary berisi title, author, date, content, error
     
     Args:
         url: Article URL to scrape
@@ -89,10 +93,10 @@ def scrape_article(url: str) -> Dict[str, Optional[str]]:
         - error: Error message (if any)
     """
     try:
-        # Download HTML with custom headers to avoid blocking
+        # Download HTML dengan custom headers agar tidak di-block oleh website
         import urllib.request
         
-        # Create request with user agent
+        # Buat request dengan User-Agent (agar terlihat seperti browser biasa)
         req = urllib.request.Request(
             url,
             headers={
@@ -100,7 +104,7 @@ def scrape_article(url: str) -> Dict[str, Optional[str]]:
             }
         )
         
-        # Download page
+        # Download halaman web (timeout 10 detik)
         try:
             with urllib.request.urlopen(req, timeout=10) as response:
                 downloaded = response.read().decode('utf-8')
@@ -116,13 +120,13 @@ def scrape_article(url: str) -> Dict[str, Optional[str]]:
                 'error': 'Failed to download page content'
             }
         
-        # Extract main content
+        # Ekstrak konten utama artikel menggunakan trafilatura
         text = trafilatura.extract(
             downloaded,
-            include_comments=False,
-            include_tables=False,
-            no_fallback=False,  # Enable fallback for better extraction
-            deduplicate=True
+            include_comments=False,  # Jangan ambil komentar
+            include_tables=False,    # Jangan ambil tabel
+            no_fallback=False,       # Gunakan fallback extraction kalau gagal
+            deduplicate=True         # Hapus duplikasi konten
         )
         
         if not text:
@@ -131,10 +135,10 @@ def scrape_article(url: str) -> Dict[str, Optional[str]]:
                 'error': 'No content extracted from page. The page might be protected or have unusual structure.'
             }
         
-        # Extract metadata
+        # Ekstrak metadata artikel (title, author, date)
         metadata = trafilatura.extract_metadata(downloaded)
         
-        # Clean content
+        # Bersihkan konten dari noise
         cleaned_content = clean_html_content(text)
         
         if not cleaned_content or len(cleaned_content) < 100:
@@ -166,24 +170,25 @@ def scrape_article(url: str) -> Dict[str, Optional[str]]:
 
 def validate_url(url: str) -> bool:
     """
-    Validate if URL is properly formatted
+    Validasi apakah URL sudah benar formatnya
+    Cek: harus mulai dengan http/https, ada domain, struktur URL valid
     
     Args:
-        url: URL string to validate
+        url: String URL yang akan divalidasi
         
     Returns:
-        True if valid, False otherwise
+        True jika valid, False jika tidak valid
     """
     if not url:
         return False
     
     url = url.strip()
     
-    # Check if starts with http/https
+    # Cek apakah URL dimulai dengan http:// atau https://
     if not url.startswith(('http://', 'https://')):
         return False
     
-    # Basic URL pattern check
+    # Regex pattern untuk validasi struktur URL
     url_pattern = re.compile(
         r'^https?://'  # http:// or https://
         r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain

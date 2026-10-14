@@ -1,5 +1,6 @@
 """
-Text preprocessing utilities using Sastrawi NLP library
+Modul preprocessing teks menggunakan Sastrawi NLP library
+Pipeline: noise removal -> stopword removal -> stemming -> tokenization
 """
 
 import re
@@ -8,61 +9,62 @@ from Sastrawi.StopWordRemover.StopWordRemoverFactory import StopWordRemoverFacto
 from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
 
 
-# Initialize Sastrawi components (singleton pattern)
+# Singleton pattern untuk efisiensi (load Sastrawi hanya 1x)
 _stopword_remover = None
 _stemmer = None
 
 
 def get_stopword_remover():
-    """Get or create stopword remover instance"""
+    """Ambil atau buat instance stopword remover (singleton)"""
     global _stopword_remover
     if _stopword_remover is None:
         factory = StopWordRemoverFactory()
-        _stopword_remover = factory.create_stop_word_remover()
+        _stopword_remover = factory.create_stop_word_remover()  # Load 750+ stopwords Indonesia
     return _stopword_remover
 
 
 def get_stemmer():
-    """Get or create stemmer instance"""
+    """Ambil atau buat instance stemmer (singleton)"""
     global _stemmer
     if _stemmer is None:
         factory = StemmerFactory()
-        _stemmer = factory.create_stemmer()
+        _stemmer = factory.create_stemmer()  # Load stemmer Indonesia (berlari -> lari)
     return _stemmer
 
 
 def clean_noise(text: str) -> str:
     """
-    Remove noise from text (HTML tags, special characters, etc)
+    Hapus noise dari teks (HTML tags, special characters, watermark, dll)
+    Step: hapus [Gambas], hapus URL, lowercase, hapus non-alphabet
     
     Args:
-        text: Input text
+        text: Teks input
         
     Returns:
-        Cleaned text
+        Teks yang sudah bersih
     """
     if not text:
         return ""
     
-    # Remove [Gambas:...] tags
+    # Hapus tag [Gambas:Video] dan sejenisnya
     text = re.sub(r"\[Gambas:.*?\]", " ", text)
     
-    # Remove redaksi recommendations
+    # Hapus rekomendasi redaksi (Lihat juga, Baca juga, Simak Video)
     text = re.sub(r"(Lihat juga Video:|Baca juga:|Simak Video:).*?(\n|$)", " ", text)
     
-    # Remove city dateline (JAKARTA - ...)
+    # Hapus dateline kota (JAKARTA - ...)
     text = re.sub(r"^[A-Z\s]+-\s*", " ", text)
     
-    # Remove watermarks
+    # Hapus watermark (detikcom, detikSport, detikFinance)
     text = re.sub(r"(detikcom|detikSport|detikFinance)", " ", text, flags=re.IGNORECASE)
     
-    # Lowercase
+    # Ubah ke lowercase
     text = text.lower()
     
-    # Remove non-alphabetic characters
+    # Hapus karakter non-alphabet (hanya simpan huruf a-z dan spasi)
     text = re.sub(r"[^a-z\s]", " ", text)
     
-    # Normalize whitespace
+    # Normalize whitespace (ganti multiple spasi jadi 1 spasi)
     text = re.sub(r"\s+", " ", text).strip()
     
     return text
@@ -70,22 +72,24 @@ def clean_noise(text: str) -> str:
 
 def remove_stopwords_and_stem(text: str) -> str:
     """
-    Remove Indonesian stopwords and apply stemming
+    Hapus stopwords Indonesia dan lakukan stemming
+    Stopwords: kata umum seperti "yang", "di", "ke", "untuk", dll (750+ kata)
+    Stemming: ubah kata ke bentuk dasar (berlari -> lari, bermain -> main)
     
     Args:
-        text: Input text
+        text: Teks input
         
     Returns:
-        Processed text
+        Teks setelah stopword removal dan stemming
     """
     if not text:
         return ""
     
-    # Remove stopwords
+    # Hapus stopwords
     stopword_remover = get_stopword_remover()
     text = stopword_remover.remove(text)
     
-    # Apply stemming
+    # Stemming (ubah ke bentuk dasar)
     stemmer = get_stemmer()
     text = stemmer.stem(text)
     
@@ -94,18 +98,20 @@ def remove_stopwords_and_stem(text: str) -> str:
 
 def preprocess_text(text: str) -> str:
     """
-    Complete preprocessing pipeline
+    Pipeline preprocessing lengkap
+    Step 1: Bersihkan noise
+    Step 2: Hapus stopwords dan stemming
     
     Args:
         text: Raw input text
         
     Returns:
-        Fully preprocessed text
+        Teks hasil preprocessing (siap untuk tokenisasi)
     """
-    # Step 1: Clean noise
+    # Step 1: Bersihkan noise
     cleaned = clean_noise(text)
     
-    # Step 2: Remove stopwords and stem
+    # Step 2: Hapus stopwords dan stemming
     processed = remove_stopwords_and_stem(cleaned)
     
     return processed
@@ -113,13 +119,14 @@ def preprocess_text(text: str) -> str:
 
 def tokenize_text(text: str) -> List[str]:
     """
-    Tokenize preprocessed text into list of words
+    Tokenisasi teks yang sudah di-preprocess menjadi list kata
+    Contoh: "bola basket final" -> ["bola", "basket", "final"]
     
     Args:
-        text: Preprocessed text
+        text: Teks yang sudah di-preprocess
         
     Returns:
-        List of tokens
+        List token (kata-kata)
     """
     if not text:
         return []
@@ -130,13 +137,13 @@ def tokenize_text(text: str) -> List[str]:
 
 def get_text_statistics(text: str) -> dict:
     """
-    Get statistics about the text
+    Hitung statistik teks (jumlah karakter, kata, kalimat, rata-rata panjang kata)
     
     Args:
-        text: Input text
+        text: Teks input
         
     Returns:
-        Dictionary with statistics
+        Dictionary berisi statistik
     """
     if not text:
         return {

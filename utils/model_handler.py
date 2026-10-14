@@ -1,5 +1,6 @@
 """
-Model loading and prediction utilities
+Modul untuk loading model dan melakukan prediksi
+Load Skip-Gram Word2Vec dan SVM, lalu klasifikasi teks
 """
 
 import numpy as np
@@ -11,7 +12,7 @@ from config import PATHS, LABEL_MAPPING
 
 
 class ModelHandler:
-    """Singleton class for model management"""
+    """Singleton class untuk manajemen model (hanya load 1x)"""
     
     _instance = None
     _skipgram_model = None
@@ -25,16 +26,14 @@ class ModelHandler:
     
     def load_models(self) -> bool:
         """
-        Load Skip-Gram and SVM models from disk
-        
-        Returns:
-            True if successful, False otherwise
+        Load model Skip-Gram dan SVM dari folder models/
+        Return True jika berhasil, False jika gagal
         """
         if self._is_loaded:
-            return True
+            return True  # Sudah di-load, tidak perlu load lagi
         
         try:
-            # Load Skip-Gram model
+            # Load Skip-Gram Word2Vec model
             skipgram_path = Path(PATHS['skipgram_model'])
             if not skipgram_path.exists():
                 raise FileNotFoundError(f"Skip-Gram model not found: {skipgram_path}")
@@ -68,20 +67,18 @@ class ModelHandler:
     
     def get_model_info(self) -> Dict:
         """
-        Get model information
-        
-        Returns:
-            Dictionary with model stats
+        Ambil informasi model (dimensi vektor, vocab size, window, dll)
+        Return dictionary berisi spesifikasi model
         """
         if not self._is_loaded:
             self.load_models()
         
         return {
-            'vector_size': self._skipgram_model.vector_size if self._skipgram_model else 0,
-            'vocab_size': len(self._skipgram_model.wv) if self._skipgram_model else 0,
-            'window': self._skipgram_model.window if self._skipgram_model else 0,
-            'epochs': self._skipgram_model.epochs if self._skipgram_model else 0,
-            'classes': list(self._svm_model.classes_) if self._svm_model and hasattr(self._svm_model, 'classes_') else []
+            'vector_size': self._skipgram_model.vector_size if self._skipgram_model else 0,  # Dimensi embedding
+            'vocab_size': len(self._skipgram_model.wv) if self._skipgram_model else 0,  # Jumlah kata
+            'window': self._skipgram_model.window if self._skipgram_model else 0,  # Context window
+            'epochs': self._skipgram_model.epochs if self._skipgram_model else 0,  # Training epochs
+            'classes': list(self._svm_model.classes_) if self._svm_model and hasattr(self._svm_model, 'classes_') else []  # Kategori (Sport/Finance)
         }
 
 
@@ -111,20 +108,24 @@ def get_model_info() -> Dict:
 
 def doc_to_vector(tokens: List[str], skipgram_model) -> Tuple[np.ndarray, int, int]:
     """
-    Convert document tokens to vector using mean word embedding
+    Ubah dokumen (list token) menjadi vektor menggunakan mean word embedding
+    Proses: ambil vektor setiap kata, lalu rata-rata (mean pooling)
     
     Args:
-        tokens: List of word tokens
-        skipgram_model: Trained Word2Vec model
+        tokens: List kata hasil tokenisasi
+        skipgram_model: Model Skip-Gram yang sudah di-load
         
     Returns:
-        Tuple of (document_vector, matched_count, oov_count)
+        Tuple (document_vector, matched_count, oov_count)
+        - document_vector: vektor dokumen hasil mean pooling
+        - matched_count: jumlah kata yang ditemukan di vocabulary
+        - oov_count: jumlah kata yang tidak ditemukan (out-of-vocabulary)
     """
     if not tokens or not skipgram_model:
         vector_size = skipgram_model.vector_size if skipgram_model else 150
         return np.zeros(vector_size), 0, len(tokens)
     
-    matched_vectors = []
+    matched_vectors = []  # Simpan vektor kata yang ditemukan
     matched_count = 0
     oov_count = 0
     
@@ -132,57 +133,67 @@ def doc_to_vector(tokens: List[str], skipgram_model) -> Tuple[np.ndarray, int, i
         if not token:
             continue
         
-        # Check if word in vocabulary
+        # Cek apakah kata ada di vocabulary Skip-Gram
         if token in skipgram_model.wv:
-            matched_vectors.append(skipgram_model.wv[token])
+            matched_vectors.append(skipgram_model.wv[token])  # Ambil vektor kata
             matched_count += 1
         else:
-            oov_count += 1
+            oov_count += 1  # Kata tidak dikenali
     
-    # Calculate mean vector
+    # Hitung mean vector dari semua kata yang ditemukan
     if len(matched_vectors) > 0:
-        doc_vector = np.mean(matched_vectors, axis=0)
+        doc_vector = np.mean(matched_vectors, axis=0)  # Mean pooling
     else:
-        doc_vector = np.zeros(skipgram_model.vector_size)
+        doc_vector = np.zeros(skipgram_model.vector_size)  # Zero vector jika tidak ada kata yang match
     
     return doc_vector, matched_count, oov_count
 
 
 def predict_category(tokens: List[str]) -> Dict:
     """
-    Predict category for given tokens
+    Prediksi kategori untuk list token yang diberikan
+    Pipeline: tokens -> Skip-Gram embedding -> mean pooling -> SVM prediction
     
     Args:
-        tokens: List of word tokens
+        tokens: List kata hasil preprocessing
         
     Returns:
-        Dictionary with prediction results
+        Dictionary berisi:
+        - prediction: kategori hasil prediksi (Sport/Finance)
+        - confidence: confidence score dalam persen
+        - probabilities: probabilitas setiap kategori
+        - matched_tokens: jumlah kata yang match di vocabulary
+        - oov_tokens: jumlah kata out-of-vocabulary
+        - total_tokens: total kata
+        - vocab_coverage: persentase coverage vocabulary
     """
     skipgram_model, svm_model = load_models()
     
-    # Convert to vector
+    # Konversi dokumen ke vektor
     doc_vector, matched_count, oov_count = doc_to_vector(tokens, skipgram_model)
     
-    # Reshape for prediction
+    # Reshape untuk input SVM (harus 2D)
     vector_2d = doc_vector.reshape(1, -1)
     
-    # Predict
-    prediction = svm_model.predict(vector_2d)[0]
+    # Prediksi kategori menggunakan SVM
+    prediction = svm_model.predict(vector_2d)[0]  # Output: 0 (Finance) atau 1 (Sport)
     
-    # Get probabilities
+    # Ambil probabilitas dari SVM
     probabilities = {}
     confidence = 0.0
     
+    # Jika SVM support probability (kernel linear dengan probability=True)
     if hasattr(svm_model, 'predict_proba'):
-        proba = svm_model.predict_proba(vector_2d)[0]
+        proba = svm_model.predict_proba(vector_2d)[0]  # Probability setiap kelas
         for idx, class_label in enumerate(svm_model.classes_):
-            label_name = LABEL_MAPPING.get(class_label, str(class_label))
+            label_name = LABEL_MAPPING.get(class_label, str(class_label))  # Mapping 0->Finance, 1->Sport
             probabilities[label_name] = float(proba[idx])
-        confidence = float(max(proba))
+        confidence = float(max(proba))  # Confidence = probabilitas tertinggi
     
+    # Fallback: jika tidak ada predict_proba, gunakan decision_function
     elif hasattr(svm_model, 'decision_function'):
         decision = svm_model.decision_function(vector_2d)[0]
-        # Apply sigmoid for binary classification
+        # Apply sigmoid untuk binary classification
         if isinstance(decision, (int, float)):
             prob_positive = 1 / (1 + np.exp(-decision))
             prob_negative = 1 - prob_positive
@@ -190,7 +201,7 @@ def predict_category(tokens: List[str]) -> Dict:
             probabilities['Finance'] = float(prob_negative)
             confidence = float(max(prob_positive, prob_negative))
     
-    # Map prediction to label
+    # Mapping hasil prediksi ke label (0 -> Finance, 1 -> Sport)
     predicted_label = LABEL_MAPPING.get(prediction, str(prediction))
     
     return {
