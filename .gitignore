@@ -28,3 +28,9 @@ Thumbs.db
 # Virtual environments
 newsclassifier/
 venv311/
+
+# Experimental TF-IDF files (not used yet)
+train_tfidf_model.py
+utils/model_handler_v2.py
+models/tfidf_vectorizer.joblib
+models/svm_tfidf_classifier.joblib
