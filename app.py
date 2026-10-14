@@ -174,22 +174,27 @@ def render_url_input_tab():
     col1, col2 = st.columns(2)
     with col1:
         # Tombol load contoh artikel Sport
-        if st.button("Load Sport Example", use_container_width=True, type="secondary"):
+        if st.button("Load Sport Example", use_container_width=True, type="secondary", key="btn_sport"):
             st.session_state['loaded_url'] = "https://sport.detik.com/sepakbola/liga-indonesia/d-7128945/timnas-indonesia-u-23-vs-guinea-skor-akhir-3-0"
+            st.rerun()
     
     with col2:
         # Tombol load contoh artikel Finance
-        if st.button("Load Finance Example", use_container_width=True, type="secondary"):
+        if st.button("Load Finance Example", use_container_width=True, type="secondary", key="btn_finance"):
             st.session_state['loaded_url'] = "https://finance.detik.com/moneter/d-7128567/rupiah-menguat-ke-rp-15200-per-dolar-as-hari-ini"
+            st.rerun()
     
     # Input URL dari user
     url = st.text_input(
         "Article URL",
         value=st.session_state['loaded_url'],
         placeholder="https://sport.detik.com/...",
-        key="url_input",
         help="Enter a valid news article URL (must start with http:// or https://)"
     )
+    
+    # Update session state jika user ketik manual
+    if url != st.session_state['loaded_url']:
+        st.session_state['loaded_url'] = url
     
     st.divider()
     
