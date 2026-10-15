@@ -15,13 +15,13 @@ def plot_probability_distribution(probabilities: Dict[str, float]) -> go.Figure:
     Contoh: Sport 75%, Finance 25%
     
     Args:
-        probabilities: Dictionary with category probabilities
+        probabilities: Dictionary with category probabilities (already in percentage 0-100)
         
     Returns:
         Plotly figure object
     """
     categories = list(probabilities.keys())  # Nama kategori (Sport, Finance)
-    values = [probabilities[cat] * 100 for cat in categories]  # Konversi ke persen
+    values = [probabilities[cat] for cat in categories]  # Sudah dalam bentuk persen (0-100)
     
     # Ambil warna dari config untuk setiap kategori
     colors = [COLOR_SCHEME.get(cat.lower(), COLOR_SCHEME['primary']) for cat in categories]
