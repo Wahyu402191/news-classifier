@@ -1,25 +1,21 @@
 """
 Detik News Classifier - Streamlit Application
-Professional news classification using Skip-Gram Word2Vec + SVM
+Dual-method classification: Skip-Gram Word2Vec + TF-IDF
 """
 
 import streamlit as st
 import time
 from pathlib import Path
 
-# Import utilities - modul untuk scraping, preprocessing, model, dan visualisasi
+# Import utilities
 from utils.scraper import scrape_article, validate_url
-from utils.preprocessor import preprocess_text, tokenize_text, get_text_statistics
-from utils.model_handler import load_models, predict_category, get_model_info
-from utils.visualizer import (
-    plot_probability_distribution,
-    plot_token_statistics,
-    plot_dataset_distribution
-)
+from utils.preprocessor import preprocess_text, tokenize_text, get_text_statistics, clean_noise
+from utils.dual_model_handler import load_dual_models, get_skipgram_info, get_tfidf_info, classify_with_method
+from utils.visualizer import plot_probability_distribution, plot_dataset_distribution
 from config import UI_CONFIG, COLOR_SCHEME
 
 
-# Konfigurasi halaman Streamlit (title, icon, layout)
+# Konfigurasi halaman Streamlit
 st.set_page_config(
     page_title=UI_CONFIG['page_title'],
     page_icon=UI_CONFIG['page_icon'],
@@ -28,7 +24,7 @@ st.set_page_config(
 )
 
 
-# CSS kustom untuk styling profesional (warna biru, putih, abu-abu)
+# CSS kustom untuk styling profesional
 def load_custom_css():
     """Load custom CSS untuk styling aplikasi"""
     st.markdown("""
@@ -52,15 +48,38 @@ def load_custom_css():
         font-family: 'Segoe UI', Arial, sans-serif;
     }
     
+    /* Method selection card */
+    .stRadio > label {
+        font-weight: 600;
+        font-size: 16px;
+        color: #2c3e50;
+    }
+    
+    /* Scrollable text area */
+    .scrollable-text {
+        max-height: 300px;
+        overflow-y: auto;
+        padding: 15px;
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        font-family: 'Courier New', monospace;
+        font-size: 14px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+    
+    /* Copy button */
+    .copy-button {
+        float: right;
+        margin-bottom: 10px;
+    }
+    
     /* Metric cards */
     div[data-testid="stMetricValue"] {
         font-size: 28px;
         font-weight: 600;
-    }
-    
-    /* Success/Error boxes */
-    .element-container div[data-baseweb="notification"] {
-        border-radius: 8px;
     }
     
     /* Tabs */
@@ -80,58 +99,71 @@ def load_custom_css():
         font-weight: 500;
     }
     
-    /* Sidebar */
-    .css-1d391kg {
-        background-color: #f8f9fa;
+    /* Vector display */
+    .vector-box {
+        background-color: #1e1e1e;
+        color: #d4d4d4;
+        padding: 15px;
+        border-radius: 8px;
+        font-family: 'Courier New', monospace;
+        font-size: 13px;
+        overflow-x: auto;
+        margin: 10px 0;
     }
     
-    /* Code blocks */
-    .stCodeBlock {
-        background-color: #f5f5f5;
-        border-radius: 6px;
-    }
-    
-    /* Expander */
-    .streamlit-expanderHeader {
-        background-color: #f8f9fa;
-        border-radius: 6px;
+    /* Feature badges */
+    .feature-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        margin: 4px;
+        background-color: #e3f2fd;
+        color: #1976d2;
+        border-radius: 16px;
+        font-size: 13px;
         font-weight: 500;
     }
     </style>
     """, unsafe_allow_html=True)
 
 
-@st.cache_resource  # Cache agar model tidak di-load berulang kali
+@st.cache_resource
 def initialize_models():
-    """Inisialisasi model Skip-Gram dan SVM (hanya load sekali)"""
+    """Inisialisasi dan cache semua model (Skip-Gram dan TF-IDF)"""
     with st.spinner('Loading ML models...'):
-        models = load_models()  # Load Skip-Gram dan SVM
-        info = get_model_info()  # Ambil info model (dimensi, vocab, dll)
-    return models, info
+        success = load_dual_models()
+        skipgram_info = get_skipgram_info()
+        tfidf_info = get_tfidf_info()
+    return success, skipgram_info, tfidf_info
 
 
 def render_sidebar():
-    """Tampilkan sidebar dengan informasi model dan dataset"""
+    """Tampilkan sidebar dengan informasi model"""
     with st.sidebar:
         st.title("System Information")
         
-        # Informasi model yang sedang digunakan
+        # Model status
         st.subheader("Model Status")
         try:
-            # Load model Skip-Gram dan SVM
-            skipgram, svm = initialize_models()[0]
-            info = get_model_info()
+            success, skipgram_info, tfidf_info = initialize_models()
             
-            st.success("Models Loaded Successfully")
+            if success:
+                st.success("Models Loaded Successfully")
             
-            # Tampilkan spesifikasi model
-            st.markdown("**Skip-Gram Model:**")
-            st.metric("Vector Dimension", f"{info['vector_size']}D")  # Dimensi vektor word embedding
-            st.metric("Vocabulary Size", f"{info['vocab_size']:,} words")  # Jumlah kata dalam vocabulary
-            st.metric("Context Window", info['window'])  # Window size Skip-Gram
+            # Skip-Gram Info
+            if skipgram_info:
+                st.markdown("**Skip-Gram Model:**")
+                st.metric("Vector Dimension", f"{skipgram_info['vector_size']}D")
+                st.metric("Vocabulary Size", f"{skipgram_info['vocab_size']:,} words")
+                st.metric("Window Size", skipgram_info['window'])
+                st.caption(skipgram_info['representation'])
             
-            st.markdown("**SVM Classifier:**")
-            st.caption("Linear kernel with probability estimation")
+            st.divider()
+            
+            # TF-IDF Info
+            if tfidf_info:
+                st.markdown("**TF-IDF Model:**")
+                st.metric("Vocabulary Size", f"{tfidf_info['vocab_size']:,} features")
+                st.caption(tfidf_info['representation'])
             
         except Exception as e:
             st.error(f"Model Loading Error: {str(e)}")
@@ -139,7 +171,7 @@ def render_sidebar():
         
         st.divider()
         
-        # Informasi dataset training
+        # Dataset info
         st.subheader("Training Dataset")
         st.info("""
         **Total**: 180 articles  
@@ -148,7 +180,7 @@ def render_sidebar():
         **Split**: 80% train, 20% test
         """)
         
-        # Visualisasi distribusi dataset (pie chart)
+        # Visualization
         fig_dataset = plot_dataset_distribution(90, 90)
         st.plotly_chart(fig_dataset, use_container_width=True)
         
@@ -157,139 +189,159 @@ def render_sidebar():
         # About
         st.subheader("About")
         st.caption("""
-        News classification system using Skip-Gram Word2Vec 
-        and Support Vector Machine for automatic categorization 
-        of Detikcom articles.
+        News classification system with dual-method support:
+        Skip-Gram Word2Vec and TF-IDF Vectorizer
+        for automatic categorization of news articles.
         """)
         
         st.caption("© 2026 - Wahyu Pratama")
 
 
-def render_url_input_tab():
-    """Tampilkan tab input URL untuk scraping artikel"""
-    st.subheader("Extract from URL")
-    st.caption("Paste a news article URL to automatically extract and classify content")
+def render_method_selection():
+    """Tampilkan pilihan metode klasifikasi"""
+    st.subheader("Choose Classification Method")
     
-    # Session state untuk menyimpan URL (agar tidak hilang saat refresh)
-    if 'loaded_url' not in st.session_state:
-        st.session_state['loaded_url'] = ""
-    
-    # Tombol contoh URL (Sport dan Finance)
-    col1, col2 = st.columns(2)
-    with col1:
-        # Tombol load contoh artikel Sport
-        if st.button("Load Sport Example", use_container_width=True, type="secondary", key="btn_sport"):
-            st.session_state['loaded_url'] = "https://sport.detik.com/sepakbola/liga-indonesia/d-7128945/timnas-indonesia-u-23-vs-guinea-skor-akhir-3-0"
-            st.rerun()
-    
-    with col2:
-        # Tombol load contoh artikel Finance
-        if st.button("Load Finance Example", use_container_width=True, type="secondary", key="btn_finance"):
-            st.session_state['loaded_url'] = "https://finance.detik.com/moneter/d-7128567/rupiah-menguat-ke-rp-15200-per-dolar-as-hari-ini"
-            st.rerun()
-    
-    # Input URL dari user
-    url = st.text_input(
-        "Article URL",
-        value=st.session_state['loaded_url'],
-        placeholder="https://sport.detik.com/...",
-        help="Enter a valid news article URL (must start with http:// or https://)"
+    method = st.radio(
+        "Select method:",
+        options=["skipgram", "tfidf"],
+        format_func=lambda x: "Skip-Gram (Word2Vec) - Mean Vector" if x == "skipgram" else "TF-IDF Vectorizer - Model TF-IDF",
+        horizontal=False,
+        key="classification_method"
     )
     
-    # Update session state jika user ketik manual
-    if url != st.session_state['loaded_url']:
-        st.session_state['loaded_url'] = url
+    # Info box untuk metode yang dipilih
+    if method == "skipgram":
+        st.info("""
+        **Skip-Gram (Word2Vec)**  
+        Preprocessing: Hanya pembersihan noise. Proses stopword removal & stemming TIDAK digunakan sesuai karakteristik word embedding.
+        """)
+    else:
+        st.info("""
+        **TF-IDF Vectorizer**  
+        Preprocessing: Menggunakan Stopword Removal & Stemming Sastrawi lengkap dengan model klasifikasi TF-IDF khusus.
+        """)
     
-    st.divider()
+    return method
+
+
+def render_input_section():
+    """Tampilkan section input"""
+    st.subheader("Input Article")
     
-    # Tombol untuk mulai klasifikasi
-    if st.button("Classify Article", type="primary", use_container_width=True):
-        # Validasi URL tidak kosong
-        if not url:
-            st.warning("Please enter a URL first")
-            return
+    # Tabs untuk URL atau Text
+    tab1, tab2 = st.tabs(["Extract from URL", "Direct Text Input"])
+    
+    with tab1:
+        # Session state untuk URL
+        if 'loaded_url' not in st.session_state:
+            st.session_state['loaded_url'] = ""
         
-        # Validasi format URL
-        if not validate_url(url):
-            st.error("Invalid URL format. URL must start with http:// or https://")
-            return
+        col1, col2 = st.columns(2)
         
-        # Proses klasifikasi dari URL
-        process_url_classification(url)
-
-
-def render_text_input_tab():
-    """Tampilkan tab input teks langsung (tanpa scraping)"""
-    st.subheader("Direct Text Input")
-    st.caption("Paste or type article content directly for classification")
-    
-    # Area input teks
-    text_input = st.text_area(
-        "Article Content",
-        height=250,
-        placeholder="Paste news article text here (minimum 50 characters)...",
-        help="Enter the full article content for classification"
-    )
-    
-    # Hitung jumlah karakter
-    if text_input:
-        st.caption(f"Character count: {len(text_input)}")
-    
-    st.divider()
-    
-    # Tombol untuk mulai klasifikasi
-    if st.button("Classify Text", type="primary", use_container_width=True):
-        # Validasi minimal 50 karakter
-        if not text_input or len(text_input) < 50:
-            st.warning("Please enter at least 50 characters of text")
-            return
+        with col1:
+            if st.button("Example: Sport Article", use_container_width=True, type="secondary", key="btn_sport"):
+                st.session_state['loaded_url'] = "https://sport.detik.com/sepakbola/liga-indonesia/d-7128945/timnas-indonesia-u-23-vs-guinea-skor-akhir-3-0"
+                st.rerun()
         
-        # Proses klasifikasi dari teks langsung
-        process_text_classification(text_input)
-
-
-def process_url_classification(url: str):
-    """Proses klasifikasi dari URL (scraping -> preprocessing -> prediksi)"""
+        with col2:
+            if st.button("Example: Finance Article", use_container_width=True, type="secondary", key="btn_finance"):
+                st.session_state['loaded_url'] = "https://finance.detik.com/moneter/d-7128567/rupiah-menguat-ke-rp-15200-per-dolar-as-hari-ini"
+                st.rerun()
+        
+        url_input = st.text_input(
+            "Article URL",
+            value=st.session_state['loaded_url'],
+            placeholder="https://sport.detik.com/... atau https://finance.detik.com/...",
+            help="Paste URL artikel berita"
+        )
+        
+        if url_input != st.session_state['loaded_url']:
+            st.session_state['loaded_url'] = url_input
+        
+        return ('url', url_input)
     
-    # Progress bar untuk tracking proses
+    with tab2:
+        text_input = st.text_area(
+            "Article Content",
+            height=250,
+            placeholder="Paste full article text here (minimum 50 characters)...",
+            help="Enter article content directly"
+        )
+        
+        if text_input:
+            st.caption(f"Character count: {len(text_input)}")
+        
+        return ('text', text_input)
+
+
+def process_classification(input_type, input_data, method):
+    """Proses klasifikasi berdasarkan input"""
+    
+    # Progress bar
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    # Step 1: Scraping artikel dari URL
-    status_text.text("Step 1/4: Extracting article content...")
-    progress_bar.progress(25)
+    # Step 1: Extract content
+    if input_type == 'url':
+        status_text.text("Step 1/4: Extracting article content...")
+        progress_bar.progress(25)
+        
+        if not validate_url(input_data):
+            st.error("Invalid URL format. URL must start with http:// or https://")
+            progress_bar.empty()
+            status_text.empty()
+            return
+        
+        with st.spinner("Scraping article..."):
+            result = scrape_article(input_data)
+            time.sleep(0.5)
+        
+        if result.get('error'):
+            st.error(f"Scraping failed: {result['error']}")
+            progress_bar.empty()
+            status_text.empty()
+            return
+        
+        raw_text = result['content']
+        metadata = result
+    else:
+        if len(input_data) < 50:
+            st.warning("Please enter at least 50 characters of text")
+            return
+        
+        raw_text = input_data
+        metadata = {'title': 'Direct Input', 'author': 'User', 'date': 'Now', 'url': None}
+        progress_bar.progress(25)
     
-    with st.spinner("Scraping article..."):
-        result = scrape_article(url)  # Ekstrak konten artikel
-        time.sleep(0.5)  # Pause singkat untuk UX
-    
-    # Cek jika scraping gagal
-    if result.get('error'):
-        st.error(f"Scraping failed: {result['error']}")
-        progress_bar.empty()
-        status_text.empty()
-        return
-    
-    content = result['content']
-    
-    # Step 2: Preprocessing (noise removal, stopwords, stemming)
+    # Step 2: Preprocessing
     status_text.text("Step 2/4: Preprocessing text...")
     progress_bar.progress(50)
     
     with st.spinner("Cleaning and preprocessing..."):
-        processed_text = preprocess_text(content)  # Bersihkan teks
-        tokens = tokenize_text(processed_text)  # Tokenisasi ke list kata
+        if method == 'skipgram':
+            # Skip-Gram: Hanya noise removal (NO stopwords, NO stemming)
+            cleaned_text = clean_noise(raw_text)
+            tokens = tokenize_text(cleaned_text)
+            processed_input = tokens  # Skip-Gram pakai token list
+            processed_text = cleaned_text
+        else:
+            # TF-IDF: Full preprocessing (noise + stopwords + stemming)
+            processed_text = preprocess_text(raw_text)
+            tokens = tokenize_text(processed_text)
+            processed_input = processed_text  # TF-IDF pakai string
+        
         time.sleep(0.3)
     
-    # Step 3: Klasifikasi dengan Skip-Gram + SVM
-    status_text.text("Step 3/4: Classifying content...")
+    # Step 3: Classification
+    method_label = "Skip-Gram Word2Vec" if method == 'skipgram' else "TF-IDF Vectorizer"
+    status_text.text(f"Step 3/4: Classifying with {method_label}...")
     progress_bar.progress(75)
     
-    with st.spinner("Running Skip-Gram embedding + SVM classification..."):
-        prediction_result = predict_category(tokens)  # Prediksi kategori
+    with st.spinner(f"Running {method_label} classification..."):
+        prediction_result = classify_with_method(processed_input, method)
         time.sleep(0.3)
     
-    # Step 4: Selesai
+    # Step 4: Complete
     status_text.text("Step 4/4: Complete!")
     progress_bar.progress(100)
     time.sleep(0.5)
@@ -297,240 +349,203 @@ def process_url_classification(url: str):
     progress_bar.empty()
     status_text.empty()
     
-    # Tampilkan hasil klasifikasi
-    display_classification_results(
-        prediction_result,
-        result,
-        content,
-        processed_text,
-        tokens
-    )
+    # Display results
+    display_results(prediction_result, metadata, raw_text, processed_text, tokens, method)
 
 
-def process_text_classification(text: str):
-    """Proses klasifikasi dari teks langsung (preprocessing -> prediksi)"""
+def display_results(prediction, metadata, raw_text, processed_text, tokens, method):
+    """Tampilkan hasil klasifikasi"""
     
-    # Progress bar untuk tracking proses
-    progress_bar = st.progress(0)
-    status_text = st.empty()
+    st.success("Classification Complete!")
     
-    # Step 1: Preprocessing (noise removal, stopwords, stemming)
-    status_text.text("Step 1/2: Preprocessing text...")
-    progress_bar.progress(50)
-    
-    with st.spinner("Processing..."):
-        processed_text = preprocess_text(text)  # Bersihkan teks
-        tokens = tokenize_text(processed_text)  # Tokenisasi
-        time.sleep(0.3)
-    
-    # Step 2: Klasifikasi dengan Skip-Gram + SVM
-    status_text.text("Step 2/2: Classifying content...")
-    progress_bar.progress(75)
-    
-    with st.spinner("Running Skip-Gram embedding + SVM classification..."):
-        prediction_result = predict_category(tokens)  # Prediksi kategori
-        time.sleep(0.3)
-    
-    progress_bar.progress(100)
-    time.sleep(0.5)
-    
-    progress_bar.empty()
-    status_text.empty()
-    
-    # Tampilkan hasil klasifikasi
-    display_classification_results(
-        prediction_result,
-        {'title': 'Direct Input', 'author': 'User', 'date': 'Now', 'url': None},
-        text,
-        processed_text,
-        tokens
-    )
-
-
-def display_classification_results(prediction, metadata, raw_text, processed_text, tokens):
-    """Tampilkan hasil klasifikasi dalam layout terstruktur"""
-    
-    st.success("Classification Complete")
-    
-    # Hasil prediksi utama
+    # Main result
     st.markdown("### Classification Result")
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        # Kategori hasil prediksi (Sport/Finance)
-        st.metric(
-            "Category",
-            prediction['prediction'],
-            help="Predicted news category"
-        )
+        st.metric("Category", prediction['prediction'])
     
     with col2:
-        # Confidence score (persentase keyakinan model)
-        st.metric(
-            "Confidence",
-            f"{prediction['confidence']:.1f}%",
-            help="Model confidence score"
-        )
+        st.metric("Confidence", f"{prediction['confidence']:.1f}%")
     
     with col3:
-        # Vocabulary coverage (berapa % kata yang dikenali model)
-        coverage_pct = prediction['vocab_coverage']
-        st.metric(
-            "Vocabulary Coverage",
-            f"{coverage_pct:.1f}%",
-            help="Percentage of tokens found in Skip-Gram vocabulary"
-        )
+        if method == 'skipgram':
+            st.metric("Vocabulary Coverage", f"{prediction['vocab_coverage']:.1f}%")
+        else:
+            st.metric("Active Features", f"{prediction['active_features']}/{prediction['total_vocab']}")
     
-    # Visualisasi distribusi probabilitas (bar chart)
+    # Probability distribution
     st.markdown("### Probability Distribution")
     if prediction['probabilities']:
         fig_prob = plot_probability_distribution(prediction['probabilities'])
         st.plotly_chart(fig_prob, use_container_width=True)
     
-    # Expander penjelasan Skip-Gram
-    with st.expander("How does Skip-Gram classification work?"):
-        st.markdown("""
-        **Classification Pipeline:**
-        
-        1. **Preprocessing**: Clean text, remove stopwords, stemming
-        2. **Tokenization**: Split into individual words
-        3. **Skip-Gram Embedding**: Each word → 150D vector
-           - Example: "sepakbola" → [0.23, -0.45, 0.67, ..., 0.12]
-        4. **Mean Pooling**: Average all word vectors → document vector (150D)
-        5. **SVM Classification**: Classify document vector → Sport or Finance
-        6. **Confidence Score**: SVM decision function probability
-        
-        **Why Skip-Gram?**
-        - Captures semantic meaning (similar words have similar vectors)
-        - Better than TF-IDF for understanding context
-        - Compact representation (150D vs thousands of dimensions)
-        """)
+    # Method info
+    st.info(f"**Method Used**: {prediction['method_label']}")
     
     st.divider()
     
-    # Tab detail informasi (metadata, konten, preprocessing, token)
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "Article Metadata",
-        "Content Preview",
-        "Preprocessing Results",
-        "Token Analysis"
+    # Tabs untuk detail
+    tab1, tab2, tab3 = st.tabs([
+        "Extracted Content",
+        "Preprocessing Result",
+        "Feature Representation"
     ])
     
     with tab1:
-        # Metadata artikel (title, author, tanggal, URL)
-        st.markdown("#### Article Information")
+        st.markdown("#### Article Metadata")
         st.write(f"**Title**: {metadata.get('title', 'N/A')}")
         st.write(f"**Author**: {metadata.get('author', 'N/A')}")
         st.write(f"**Published**: {metadata.get('date', 'N/A')}")
         if metadata.get('url'):
             st.write(f"**URL**: [{metadata['url']}]({metadata['url']})")
         
-        # Statistik konten artikel
-        stats = get_text_statistics(raw_text)
-        st.markdown("#### Content Statistics")
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Characters", f"{stats['char_count']:,}")
-        col2.metric("Words", stats['word_count'])
-        col3.metric("Sentences", stats['sentence_count'])
-        col4.metric("Avg Word Length", f"{stats['avg_word_length']:.1f}")
+        st.markdown("#### Original Content")
+        st.caption(f"Total: {len(raw_text)} characters")
+        
+        # Tombol salin
+        col1, col2 = st.columns([6, 1])
+        with col2:
+            if st.button("📋 Copy", key="copy_original"):
+                st.toast("Click the text area and Ctrl+C to copy", icon="ℹ️")
+        
+        # Text area dengan scroll (disabled=False agar bisa di-copy)
+        st.text_area(
+            "",
+            raw_text,
+            height=300,
+            disabled=False,
+            key="original_content",
+            label_visibility="collapsed"
+        )
     
     with tab2:
-        # Preview konten asli (1000 karakter pertama)
-        st.markdown("#### Original Content")
-        st.caption("First 1000 characters of extracted content")
-        st.text_area(
-            "",
-            raw_text[:1000] + ("..." if len(raw_text) > 1000 else ""),
-            height=300,
-            disabled=True
-        )
-    
-    with tab3:
-        # Hasil preprocessing (setelah noise removal, stopwords, stemming)
-        st.markdown("#### Preprocessed Text")
-        st.caption("After noise removal, stopword removal, and stemming (Sastrawi)")
+        preprocessing_label = "Noise Removal Only (No Stopwords, No Stemming)" if method == 'skipgram' else "Noise Removal + Stopword Removal + Stemming (Sastrawi)"
         
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Original Words", len(raw_text.split()))
-        with col2:
-            st.metric("After Processing", len(tokens))
-        
-        st.text_area(
-            "",
-            processed_text[:1000] + ("..." if len(processed_text) > 1000 else ""),
-            height=200,
-            disabled=True
-        )
-    
-    with tab4:
-        # Analisis token (matched vs out-of-vocabulary)
-        st.markdown("#### Token Statistics (Skip-Gram Vocabulary)")
-        
-        st.caption("""
-        Tokens are converted to 150D vectors using Skip-Gram Word2Vec model. 
-        Matched tokens have vector representation, OOV tokens are ignored.
-        """)
+        st.markdown(f"#### Preprocessing: {preprocessing_label}")
         
         col1, col2, col3 = st.columns(3)
         col1.metric("Total Tokens", prediction['total_tokens'])
-        col2.metric("Matched", prediction['matched_tokens'])  # Kata yang ada di vocabulary
-        col3.metric("Out of Vocabulary", prediction['oov_tokens'])  # Kata yang tidak dikenali
         
-        # Visualisasi coverage token (pie chart)
-        if prediction['matched_tokens'] > 0:
-            fig_tokens = plot_token_statistics(
-                prediction['matched_tokens'],
-                prediction['oov_tokens']
-            )
-            st.plotly_chart(fig_tokens, use_container_width=True)
+        if method == 'skipgram':
+            col2.metric("Matched in Vocab", prediction['matched_tokens'])
+            col3.metric("Out of Vocabulary", prediction['oov_tokens'])
+        else:
+            col2.metric("Active TF-IDF", prediction['active_features'])
+            col3.metric("Zero Values", prediction['total_vocab'] - prediction['active_features'])
         
-        # Sample 50 token pertama
-        with st.expander("View Sample Tokens (first 50)"):
-            sample_tokens = tokens[:50]
-            st.write(", ".join(sample_tokens))
+        st.markdown("#### Processed Text")
+        
+        # Tombol salin
+        col1, col2 = st.columns([6, 1])
+        with col2:
+            if st.button("📋 Copy", key="copy_processed"):
+                st.toast("Click the text area and Ctrl+C to copy", icon="ℹ️")
+        
+        # Text area dengan scroll
+        st.text_area(
+            "",
+            processed_text,
+            height=250,
+            disabled=False,
+            key="processed_content",
+            label_visibility="collapsed"
+        )
+        
+        # Sample tokens
+        if method == 'skipgram' and 'matched_sample' in prediction:
+            with st.expander("Sample Matched Tokens (first 20)"):
+                st.write(", ".join(prediction['matched_sample']))
+    
+    with tab3:
+        st.markdown(f"#### {prediction['method_label']} - Feature Representation")
+        
+        if method == 'skipgram':
+            st.markdown(f"**Dimension**: {prediction['vector_dimension']}D Vector")
+            st.markdown(f"**Representation Method**: Mean Word Vector (Rata-rata Vektor Kata)")
+            
+            st.markdown("**Vector Values (First 15 dimensions):**")
+            
+            # Display vector sebagai code block yang bisa di-copy
+            vector_str = str(prediction['vector_sample'])
+            st.code(vector_str, language='python')
+            
+            # Full vector dalam expander
+            with st.expander("View Full Vector (All Dimensions)"):
+                full_vector_str = str(prediction['vector_full'])
+                st.code(full_vector_str, language='python')
+                st.caption(f"Total dimensions: {len(prediction['vector_full'])}")
+        
+        else:  # TF-IDF
+            st.markdown(f"**Total Dimensions**: {prediction['vector_dimension']} Features (TF-IDF Matrix)")
+            st.markdown(f"**Active Features**: {prediction['active_features']} (Non-zero values)")
+            st.markdown(f"**Representation Method**: TF-IDF Matrix (Term Frequency - Inverse Document Frequency)")
+            
+            st.markdown("**Top Keywords by TF-IDF Score:**")
+            
+            # Display top features sebagai badges
+            if 'top_features' in prediction and prediction['top_features']:
+                html_badges = ""
+                for feat in prediction['top_features']:
+                    html_badges += f'<span class="feature-badge">{feat["word"]} <b>{feat["score"]}</b></span>'
+                st.markdown(html_badges, unsafe_allow_html=True)
+            
+            st.markdown("**Sample TF-IDF Values (First 15 non-zero):**")
+            
+            # Display sample values
+            if 'vector_sample' in prediction:
+                sample_str = "[\n"
+                for item in prediction['vector_sample']:
+                    sample_str += f"  {item['feature']}: {item['value']}\n"
+                sample_str += "]"
+                st.code(sample_str, language='python')
+            
+            # Full vector dalam expander
+            with st.expander("View Full TF-IDF Vector (All Features)"):
+                full_vector_str = str(prediction['vector_full'])
+                st.code(full_vector_str, language='python')
+                st.caption(f"Total features: {len(prediction['vector_full'])}, Active: {prediction['active_features']}")
 
 
 def main():
-    """Fungsi utama aplikasi - entry point"""
+    """Fungsi utama aplikasi"""
     
-    # Load CSS kustom
+    # Load custom CSS
     load_custom_css()
     
-    # Tampilkan sidebar (model info, dataset info)
+    # Render sidebar
     render_sidebar()
     
-    # Konten utama
+    # Main content
     st.title("Detik News Classifier")
-    st.caption("Automated classification of news articles using Machine Learning")
+    st.caption("Dual-Method Classification System: Skip-Gram Word2Vec & TF-IDF Vectorizer")
     
     st.markdown("""
-    This application uses **Skip-Gram Word2Vec** for word embedding and 
-    **Support Vector Machine (SVM)** for classification of news articles 
-    into **Sport** or **Finance** categories.
-    """)
-    
-    # Info box tentang metode
-    st.info("""
-    **Machine Learning Pipeline:**
-    1. Skip-Gram Word2Vec (150D vectors) - Word embedding
-    2. Mean Pooling - Document vector representation  
-    3. SVM Classifier (Linear kernel) - Binary classification
+    Automated classification of news articles into **Sport** or **Finance** categories
+    using two different machine learning approaches with different preprocessing strategies.
     """)
     
     st.divider()
     
-    # Tab input (URL atau Text langsung)
-    tab1, tab2 = st.tabs(["URL Input", "Text Input"])
+    # Method selection
+    method = render_method_selection()
     
-    with tab1:
-        render_url_input_tab()  # Tab scraping dari URL
+    st.divider()
     
-    with tab2:
-        render_text_input_tab()  # Tab input teks langsung
+    # Input section
+    input_type, input_data = render_input_section()
+    
+    st.divider()
+    
+    # Classify button
+    if st.button("🚀 Classify Article", type="primary", use_container_width=True):
+        if not input_data or (input_type == 'text' and len(input_data) < 50):
+            st.warning("Please provide valid input (URL or text with at least 50 characters)")
+            return
+        
+        process_classification(input_type, input_data, method)
 
 
-# Entry point aplikasi
 if __name__ == "__main__":
     main()

@@ -32,31 +32,6 @@ Aplikasi ini menggunakan Natural Language Processing (NLP) dan Machine Learning 
 ### Data Processing
 - **Pandas 2.0.0**: Library untuk manipulasi data CSV
 
-## Arsitektur Aplikasi
-
-### Apakah Bisa Dipisah Backend dan Frontend?
-
-**TIDAK**, aplikasi ini menggunakan Streamlit yang merupakan framework all-in-one (tidak bisa dipisah backend-frontend seperti FastAPI + HTML/CSS/JS). 
-
-**Alasan:**
-- Streamlit adalah framework full-stack yang menggabungkan frontend dan backend dalam satu file Python
-- Berbeda dengan teman Anda yang menggunakan FastAPI (backend) + HTML/CSS/JS (frontend)
-- Streamlit otomatis generate UI dari kode Python tanpa perlu HTML/CSS/JS manual
-- Lebih simple dan cepat untuk deployment
-
-**Perbandingan:**
-```
-Teman (Ivan):
-- Backend: FastAPI (main.py, predictor.py) -> Port 8000
-- Frontend: HTML + CSS + JavaScript -> Port terpisah
-- Deployment: VPS berbayar dengan Docker
-
-Aplikasi Anda:
-- Full-stack: Streamlit (app.py + utils/) -> Port 8501
-- UI: Otomatis di-generate Streamlit (Python only)
-- Deployment: Streamlit Cloud (gratis)
-```
-
 ## Struktur Folder
 
 ```
